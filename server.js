@@ -48,20 +48,10 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // ===== ROUTE IMPORTS =====
-const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/adminRoutes');
-const zoneRoutes = require('./routes/zones');
-const bookingRoutes = require('./routes/bookings');
-const eventRoutes = require('./routes/events');
-const notificationRoutes = require('./routes/notifications');
 
 // ===== ROUTE MOUNTING =====
-app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/zones', zoneRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
