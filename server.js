@@ -42,6 +42,32 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
+// ===== ROUTE IMPORTS =====
+const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/adminRoutes');
+const zoneRoutes = require('./routes/zones');
+const bookingRoutes = require('./routes/bookings');
+const eventRoutes = require('./routes/events');
+const notificationRoutes = require('./routes/notifications');
+
+// ===== ROUTE MOUNTING =====
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/zones', zoneRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/notifications', notificationRoutes);
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    success: true, 
+    message: 'Campus Parking API is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Get local IP address
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
