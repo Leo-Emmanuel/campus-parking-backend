@@ -8,6 +8,7 @@ const Event = require('../models/Event');
 const Booking = require('../models/Booking');
 const Zone = require('../models/ParkingZone');
 const PDFDocument = require('pdfkit');
+const auth = require('../middleware/auth');
 
 /**
  * @route   GET /api/admin/reports
@@ -478,7 +479,7 @@ function addTableRow(doc, data, startY, columnWidths) {
  * @desc    Generate PDF report for visitors/users
  * @access  Private (Admin only)
  */
-router.get('/reports/visitors/pdf', async (req, res) => {
+router.get('/reports/visitors/pdf', auth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
@@ -566,7 +567,7 @@ router.get('/reports/visitors/pdf', async (req, res) => {
  * @desc    Generate PDF report for events
  * @access  Private (Admin only)
  */
-router.get('/reports/events/pdf', async (req, res) => {
+router.get('/reports/events/pdf', auth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
@@ -651,7 +652,7 @@ router.get('/reports/events/pdf', async (req, res) => {
  * @desc    Generate combined PDF report with all data
  * @access  Private (Admin only)
  */
-router.get('/reports/combined/pdf', async (req, res) => {
+router.get('/reports/combined/pdf', auth, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
