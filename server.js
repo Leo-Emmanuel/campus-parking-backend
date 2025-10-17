@@ -21,6 +21,11 @@ const server = http.createServer(app);
 app.use(express.json());
 app.use(cors());
 
+// Trust proxy for rate limiting in production
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // ===== CONFIGURATION =====
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/campus-parking';
