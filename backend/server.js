@@ -13,6 +13,7 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const PDFDocument = require('pdfkit');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -2201,7 +2202,78 @@ app.use((req, res) => {
   });
 });
 
-// ===== START SERVER =====
+// ===== AUTOMATED CLEANUP JOB =====
+
+// Function to expire old bookings
+async function expireOldBookings() {
+  try {
+    const now = new Date();
+    
+    // Find bookings that are past their endTime and still active
+    const expiredBookings = await Booking.find({
+      status: { $in: ['active', 'checked-in'] },
+      endTime: { $lt: now }
+    });
+
+    if (expiredBookings.length > 0) {
+      console.log(`Found ${expiredBookings.length} expired bookings to process`);
+
+      for (const booking of expiredBookings) {
+        // Mark as expired
+        booking.status = 'expired';
+        
+        // Add violation if user never checked out
+        if (booking.checkInTime && !booking.checkOutTime) {
+          booking.violations.push({
+            type: 'no-checkout',
+            description: 'User failed to check out before booking expired',
+            timestamp: now
+          });
+        } else if (!booking.checkInTime) {
+          booking.violations.push({
+            type: 'unauthorized',
+            description: 'User never checked in - no-show',
+            timestamp: now
+          });
+        }
+        
+        await booking.save();
+
+        // Send notification to user
+        await Notification.create({
+          userId: booking.userId,
+          title: 'Booking Expired',
+          message: `Your parking booking at ${booking.zoneName} has expired`,
+          type: 'warning',
+        });
+
+        // Broadcast zone update
+        const zoneData = await getZoneAvailability(booking.zoneId);
+        if (zoneData) {
+          broadcast({
+            type: 'zone_update',
+            zoneId: booking.zoneId.toString(),
+            available: zoneData.available
+          });
+        }
+      }
+
+      console.log(`✓ Expired ${expiredBookings.length} old bookings`);
+    }
+  } catch (error) {
+    console.error('Error in expireOldBookings job:', error);
+  }
+}
+
+// Schedule cleanup job to run every hour
+cron.schedule('0 * * * *', () => {
+  console.log('Running automated booking cleanup job...');
+  expireOldBookings();
+});
+
+// Run cleanup on startup
+console.log('Running initial booking cleanup...');
+expireOldBookings();
 
 mongoose.connection.once('open', async () => {
   console.log('✓ Connected to MongoDB');
