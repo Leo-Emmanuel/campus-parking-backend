@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
-  user: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
@@ -17,7 +17,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['booking', 'cancellation', 'reminder', 'violation', 'event', 'system'],
+    enum: ['booking', 'cancellation', 'reminder', 'violation', 'event', 'system', 'success', 'warning', 'info', 'error'],
     default: 'system',
   },
   booking: {
