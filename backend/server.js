@@ -2286,10 +2286,114 @@ async function expireOldBookings() {
   }
 }
 
+// Function to send booking reminders
+async function sendBookingReminders() {
+  try {
+    const now = new Date();
+    
+    // Reminder 1: 1 day before booking starts
+    const oneDayFromNow = new Date(now);
+    oneDayFromNow.setHours(now.getHours() + 24);
+    oneDayFromNow.setMinutes(now.getMinutes() - 5, 0, 0); // 5-minute window
+    
+    const oneDayLater = new Date(oneDayFromNow);
+    oneDayLater.setMinutes(oneDayLater.getMinutes() + 10);
+    
+    // Reminder 2: 1 hour before booking starts
+    const oneHourFromNow = new Date(now);
+    oneHourFromNow.setHours(now.getHours() + 1);
+    oneHourFromNow.setMinutes(now.getMinutes() - 5, 0, 0);
+    
+    const oneHourLater = new Date(oneHourFromNow);
+    oneHourLater.setMinutes(oneHourLater.getMinutes() + 10);
+    
+    // Reminder 3: 15 minutes before booking expires
+    const fifteenMinutesFromNow = new Date(now);
+    fifteenMinutesFromNow.setMinutes(now.getMinutes() + 15);
+    fifteenMinutesFromNow.setSeconds(0, 0);
+    
+    const fifteenMinutesLater = new Date(fifteenMinutesFromNow);
+    fifteenMinutesLater.setMinutes(fifteenMinutesLater.getMinutes() + 10);
+
+    // Find bookings that need reminders
+    const bookingsNeedingReminders = await Booking.find({
+      status: 'active',
+      $or: [
+        // 1 day before start
+        { startTime: { $gte: oneDayFromNow, $lte: oneDayLater } },
+        // 1 hour before start
+        { startTime: { $gte: oneHourFromNow, $lte: oneHourLater } },
+        // 15 minutes before expiry
+        { endTime: { $gte: fifteenMinutesFromNow, $lte: fifteenMinutesLater } }
+      ]
+    });
+
+    for (const booking of bookingsNeedingReminders) {
+      const timeDiffStart = booking.startTime - now;
+      const timeDiffEnd = booking.endTime - now;
+      
+      let reminderType = '';
+      let title = '';
+      let message = '';
+      
+      // Determine which reminder to send
+      if (timeDiffStart > 0 && timeDiffStart <= 24 * 60 * 60 * 1000 + 10 * 60 * 1000 && timeDiffStart >= 24 * 60 * 60 * 1000 - 5 * 60 * 1000) {
+        // 1 day before
+        reminderType = '1day';
+        title = 'Parking Reminder - Tomorrow';
+        message = `Your parking at ${booking.zoneName} is scheduled for tomorrow at ${booking.startTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+      } else if (timeDiffStart > 0 && timeDiffStart <= 60 * 60 * 1000 + 10 * 60 * 1000 && timeDiffStart >= 60 * 60 * 1000 - 5 * 60 * 1000) {
+        // 1 hour before
+        reminderType = '1hour';
+        title = 'Parking Reminder - 1 Hour';
+        message = `Your parking at ${booking.zoneName} starts in 1 hour. Don't forget to check-in!`;
+      } else if (timeDiffEnd > 0 && timeDiffEnd <= 15 * 60 * 1000 + 10 * 60 * 1000 && timeDiffEnd >= 15 * 60 * 1000) {
+        // 15 minutes before expiry
+        reminderType = 'expiring';
+        title = 'Parking Expiring Soon';
+        message = `Your parking at ${booking.zoneName} expires in 15 minutes. Please check out or extend your booking.`;
+      }
+      
+      if (reminderType) {
+        // Check if reminder already sent (to avoid duplicates)
+        const existingReminder = await Notification.findOne({
+          userId: booking.userId,
+          title: title,
+          createdAt: { $gte: new Date(now - 15 * 60 * 1000) } // Within last 15 minutes
+        });
+        
+        if (!existingReminder) {
+          await Notification.create({
+            userId: booking.userId,
+            title: title,
+            message: message,
+            type: reminderType === 'expiring' ? 'warning' : 'info',
+            booking: booking._id
+          });
+          
+          console.log(`✓ Sent ${reminderType} reminder for booking ${booking._id}`);
+        }
+      }
+    }
+    
+    if (bookingsNeedingReminders.length > 0) {
+      console.log(`✓ Processed ${bookingsNeedingReminders.length} booking reminders`);
+    }
+  } catch (error) {
+    console.error('Error in sendBookingReminders job:', error);
+  }
+}
+
 // Schedule cleanup job to run every hour
 cron.schedule('0 * * * *', () => {
   console.log('Running automated booking cleanup job...');
   expireOldBookings();
+});
+
+// Schedule reminder job to run every 10 minutes
+cron.schedule('*/10 * * * *', () => {
+  console.log('Running booking reminder job...');
+  sendBookingReminders();
 });
 
 // Run cleanup on startup
