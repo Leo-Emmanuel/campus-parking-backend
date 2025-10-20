@@ -1,0 +1,86 @@
+{
+  "expo": {
+    "name": "Campus Parking",
+    "slug": "campus-parking-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.campus.parkingapp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to scan QR codes for parking check-in/check-out.",
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to show nearby parking zones."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "package": "com.campus.parkingapp",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "NOTIFICATIONS",
+        "VIBRATE",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_AUDIO",
+        "ACCESS_MEDIA_LOCATION",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2563EB"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Campus Parking to use your camera to scan QR codes."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Campus Parking to use your location to show nearby parking zones."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Campus Parking to access your photos to save parking receipts and documents.",
+          "savePhotosPermission": "Allow Campus Parking to save parking receipts to your photo library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f28076e9-6c0b-4f26-a5a4-854a3a448ad5"
+      }
+    }
+  }
+}
