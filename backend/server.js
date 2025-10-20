@@ -642,6 +642,27 @@ app.post('/api/bookings', authenticateToken, bookingValidation, handleValidation
       return res.status(404).json({ success: false, message: 'Zone not found' });
     }
 
+    // Role-based zone access control
+    const userRole = req.user.role;
+    const zoneType = zone.type;
+    
+    const accessRules = {
+      student: ['student', 'general'],
+      staff: ['staff', 'student', 'general'],
+      visitor: ['visitor', 'general'],
+      admin: ['student', 'staff', 'visitor', 'general', 'event']
+    };
+
+    const allowedZones = accessRules[userRole] || ['general'];
+    
+    if (!allowedZones.includes(zoneType)) {
+      await session.abortTransaction();
+      return res.status(403).json({ 
+        success: false, 
+        message: `${userRole.charAt(0).toUpperCase() + userRole.slice(1)}s are not allowed to book ${zoneType} parking zones` 
+      });
+    }
+
     const bookingDate = new Date(date);
     const startOfDay = new Date(bookingDate);
     startOfDay.setHours(0, 0, 0, 0);
