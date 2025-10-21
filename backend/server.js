@@ -474,12 +474,29 @@ app.get('/api/zones', async (req, res) => {
           date: { $gte: startOfDay, $lte: endOfDay },
         });
 
+        // Calculate total event slot allocations for this zone
+        const eventAllocations = await Event.aggregate([
+          { 
+            $match: { 
+              zoneId: zone._id,
+              date: { $gte: startOfDay }
+            } 
+          },
+          { 
+            $group: { 
+              _id: null, 
+              total: { $sum: '$allocatedSlots' } 
+            } 
+          }
+        ]);
+        const totalEventSlots = eventAllocations.length > 0 ? eventAllocations[0].total : 0;
+
         return {
           id: zone._id,
           name: zone.name,
           code: zone.code,
           total: zone.totalSlots,
-          available: Math.max(0, zone.totalSlots - activeBookings),
+          available: Math.max(0, zone.totalSlots - activeBookings - totalEventSlots),
           type: zone.type,
           location: zone.location?.address || zone.location,
         };
@@ -1275,50 +1292,115 @@ app.get('/api/events', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/events', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
   try {
     if (req.user.role !== 'admin') {
+      await session.abortTransaction();
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
     const { name, date, allocatedSlots, zone, zoneId } = req.body;
 
     if (!name || !date || allocatedSlots === undefined) {
+      await session.abortTransaction();
       return res.status(400).json({ 
         success: false, 
         message: 'name, date, and allocatedSlots are required' 
       });
     }
 
-    // Validate zoneId if provided
+    const allocatedSlotsNum = parseInt(allocatedSlots);
+    if (isNaN(allocatedSlotsNum) || allocatedSlotsNum <= 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ 
+        success: false, 
+        message: 'allocatedSlots must be a positive number' 
+      });
+    }
+
+    // Validate and update zone if provided
+    let zoneDoc = null;
     if (zoneId && mongoose.Types.ObjectId.isValid(zoneId)) {
-      const zoneExists = await Zone.findById(zoneId);
-      if (!zoneExists) {
+      zoneDoc = await Zone.findById(zoneId).session(session);
+      if (!zoneDoc) {
+        await session.abortTransaction();
         return res.status(400).json({ 
           success: false, 
           message: 'Selected zone does not exist' 
         });
       }
+
+      // Check if zone has enough available slots
+      const activeBookings = await Booking.countDocuments({
+        zoneId: zoneId,
+        status: 'active',
+        date: { $gte: new Date() }
+      }).session(session);
+
+      const currentAvailable = Math.max(0, zoneDoc.totalSlots - activeBookings);
+
+      if (currentAvailable < allocatedSlotsNum) {
+        await session.abortTransaction();
+        return res.status(400).json({ 
+          success: false, 
+          message: `Not enough available slots in ${zone}. Available: ${currentAvailable}, Requested: ${allocatedSlotsNum}` 
+        });
+      }
+
+      // Reduce zone availability by allocated slots
+      // We don't actually change totalSlots, but the available count will reflect this
+      // when calculating: available = totalSlots - activeBookings - allocatedSlots
     }
 
     const event = new Event({
       name,
       date,
-      allocatedSlots,
+      allocatedSlots: allocatedSlotsNum,
       zone,
       zoneId,
       description: req.body.description,
       organizer: req.user.id,
     });
     
-    await event.save();
+    await event.save({ session });
+    await session.commitTransaction();
+
+    // Broadcast zone update if zone was specified
+    if (zoneDoc) {
+      const activeBookings = await Booking.countDocuments({
+        zoneId: zoneId,
+        status: 'active',
+        date: { $gte: new Date() }
+      });
+
+      // Calculate new available considering event allocation
+      const eventAllocations = await Event.aggregate([
+        { $match: { zoneId: mongoose.Types.ObjectId(zoneId), date: { $gte: new Date() } } },
+        { $group: { _id: null, total: { $sum: '$allocatedSlots' } } }
+      ]);
+      const totalEventSlots = eventAllocations.length > 0 ? eventAllocations[0].total : 0;
+
+      const newAvailable = Math.max(0, zoneDoc.totalSlots - activeBookings - totalEventSlots);
+
+      broadcast({
+        type: 'zone_update',
+        zoneId: zoneId,
+        available: newAvailable
+      });
+    }
 
     res.json({ success: true, event });
   } catch (error) {
+    await session.abortTransaction();
     console.error('Create event error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Server error creating event' 
     });
+  } finally {
+    session.endSession();
   }
 });
 
@@ -1363,6 +1445,33 @@ app.delete('/api/events/:eventId', authenticateToken, async (req, res) => {
 
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    // Broadcast zone update to restore availability
+    if (event.zoneId) {
+      const zone = await Zone.findById(event.zoneId);
+      if (zone) {
+        const activeBookings = await Booking.countDocuments({
+          zoneId: event.zoneId,
+          status: 'active',
+          date: { $gte: new Date() }
+        });
+
+        // Recalculate event allocations (excluding the deleted event)
+        const eventAllocations = await Event.aggregate([
+          { $match: { zoneId: event.zoneId, date: { $gte: new Date() } } },
+          { $group: { _id: null, total: { $sum: '$allocatedSlots' } } }
+        ]);
+        const totalEventSlots = eventAllocations.length > 0 ? eventAllocations[0].total : 0;
+
+        const newAvailable = Math.max(0, zone.totalSlots - activeBookings - totalEventSlots);
+
+        broadcast({
+          type: 'zone_update',
+          zoneId: event.zoneId.toString(),
+          available: newAvailable
+        });
+      }
     }
 
     res.json({ success: true, message: 'Event deleted successfully' });
