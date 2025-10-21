@@ -50,9 +50,19 @@ app.use('/api/', limiter);
 
 // ===== ROUTE IMPORTS =====
 const adminRoutes = require('./routes/adminRoutes');
+const authRoutes = require('./routes/auth');
+const bookingRoutes = require('./routes/bookings');
+const eventRoutes = require('./routes/events');
+const notificationRoutes = require('./routes/notifications');
+const zoneRoutes = require('./routes/zones');
 
 // ===== ROUTE MOUNTING =====
 app.use('/api/admin', adminRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/zones', zoneRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
