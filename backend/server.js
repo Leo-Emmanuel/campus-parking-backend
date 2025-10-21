@@ -533,15 +533,39 @@ app.patch('/api/zones/:zoneId', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid zone ID' });
     }
 
-    const zone = await Zone.findByIdAndUpdate(
-      req.params.zoneId,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
-    if (!zone) {
+    const currentZone = await Zone.findById(req.params.zoneId);
+    if (!currentZone) {
       return res.status(404).json({ success: false, message: 'Zone not found' });
     }
+
+    // Map 'total' to 'totalSlots' if provided
+    const updateData = { ...req.body };
+    if (updateData.total !== undefined) {
+      updateData.totalSlots = updateData.total;
+      delete updateData.total;
+    }
+
+    // If totalSlots is being updated, recalculate availableSlots based on current bookings
+    if (updateData.totalSlots !== undefined && updateData.totalSlots !== currentZone.totalSlots) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const activeBookings = await Booking.countDocuments({
+        zoneId: req.params.zoneId,
+        status: 'active',
+        date: { $gte: startOfDay, $lte: endOfDay },
+      });
+
+      updateData.availableSlots = Math.max(0, updateData.totalSlots - activeBookings);
+    }
+
+    const zone = await Zone.findByIdAndUpdate(
+      req.params.zoneId,
+      updateData,
+      { new: true, runValidators: true }
+    );
 
     const zoneData = await getZoneAvailability(zone._id);
     broadcast({

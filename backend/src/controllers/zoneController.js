@@ -71,17 +71,33 @@ exports.createZone = async (req, res) => {
 // @access  Private/Admin
 exports.updateZone = async (req, res) => {
   try {
-    const zone = await ParkingZone.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!zone) {
+    const currentZone = await ParkingZone.findById(req.params.id);
+    if (!currentZone) {
       return res.status(404).json({
         status: 'error',
         message: 'Zone not found',
       });
     }
+
+    // Map 'total' to 'totalSlots' if provided
+    const updateData = { ...req.body };
+    if (updateData.total !== undefined) {
+      updateData.totalSlots = updateData.total;
+      delete updateData.total;
+    }
+
+    // If totalSlots is being updated, recalculate availableSlots
+    if (updateData.totalSlots !== undefined && updateData.totalSlots !== currentZone.totalSlots) {
+      const currentOccupied = currentZone.totalSlots - currentZone.availableSlots;
+      updateData.availableSlots = Math.max(0, updateData.totalSlots - currentOccupied);
+    }
+
+    const zone = await ParkingZone.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
     res.status(200).json({
       status: 'success',
       data: { zone },
