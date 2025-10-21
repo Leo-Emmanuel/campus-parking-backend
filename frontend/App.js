@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
 // ===== UPDATED: Use Standard FileSystem API =====
 // Using the standard expo-file-system API for better compatibility
 import * as FileSystem from 'expo-file-system';
@@ -40,6 +42,16 @@ import {
   Download,
   FileText,
 } from 'lucide-react-native';
+
+// ===== PUSH NOTIFICATION CONFIGURATION =====
+// Configure how notifications are handled when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 // ===== BACKEND API CONFIGURATION =====
 // Cloud deployment URL (for production)
@@ -252,6 +264,25 @@ const api = {
       throw error;
     }
   },
+
+  registerPushToken: async (userId, pushToken, token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/${userId}/push-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ pushToken }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+      return data;
+    } catch (error) {
+      console.error('Register push token API error:', error);
+      throw error;
+    }
+  },
 };
 
 const CampusParkingApp = () => {
@@ -266,6 +297,11 @@ const CampusParkingApp = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+
+  // Push notification refs
+  const notificationListener = useRef();
+  const responseListener = useRef();
+  const [expoPushToken, setExpoPushToken] = useState('');
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '', role: 'student' });
   const [signupForm, setSignupForm] = useState({
@@ -288,6 +324,7 @@ const CampusParkingApp = () => {
     date: '',
     allocatedSlots: '',
     zone: '',
+    zoneId: null,
     description: '',
   });
   const [zoneForm, setZoneForm] = useState({
@@ -303,6 +340,12 @@ const CampusParkingApp = () => {
   });
   const [editMode, setEditMode] = useState(false);
   const [backendConnected, setBackendConnected] = useState(null);
+
+  // Date picker states
+  const [showBookingDatePicker, setShowBookingDatePicker] = useState(false);
+  const [showEventDatePicker, setShowEventDatePicker] = useState(false);
+  const [showReportStartDatePicker, setShowReportStartDatePicker] = useState(false);
+  const [showReportEndDatePicker, setShowReportEndDatePicker] = useState(false);
 
   const [parkingZones, setParkingZones] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -447,6 +490,50 @@ const CampusParkingApp = () => {
     }, ...prev]);
   };
 
+  // ===== PUSH NOTIFICATION FUNCTIONS =====
+  const registerForPushNotificationsAsync = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+      }
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        console.log('Failed to get push token for push notification!');
+        return null;
+      }
+      
+      // Get push token - projectId is optional for development
+      const token = (await Notifications.getExpoPushTokenAsync()).data;
+      
+      console.log('Push token:', token);
+      setExpoPushToken(token);
+      
+      // Register token with backend
+      if (currentUser && authToken) {
+        await api.registerPushToken(currentUser.id, token, authToken);
+        console.log('Push token registered with backend');
+      }
+      
+      return token;
+    } catch (error) {
+      console.error('Error registering for push notifications:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (currentUser) {
       connectWebSocket();
@@ -469,6 +556,47 @@ const CampusParkingApp = () => {
   useEffect(() => {
     if (currentUser && authToken) {
       fetchUserData();
+    }
+  }, [currentUser, authToken]);
+
+  // Setup push notifications when user logs in
+  useEffect(() => {
+    if (currentUser && authToken) {
+      registerForPushNotificationsAsync();
+
+      // Listen for notifications received while app is foregrounded
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('Notification received:', notification);
+        const { title, body } = notification.request.content;
+        addNotification({
+          title: title || 'New Notification',
+          message: body || '',
+          type: 'info',
+          time: 'Just now'
+        });
+      });
+
+      // Listen for user interactions with notifications
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('Notification tapped:', response);
+        const data = response.notification.request.content.data;
+        
+        // Navigate based on notification data
+        if (data?.screen === 'bookings') {
+          setActiveTab('bookings');
+        } else if (data?.screen === 'notifications') {
+          setActiveTab('notifications');
+        }
+      });
+
+      return () => {
+        if (notificationListener.current) {
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        }
+        if (responseListener.current) {
+          Notifications.removeNotificationSubscription(responseListener.current);
+        }
+      };
     }
   }, [currentUser, authToken]);
 
@@ -516,16 +644,7 @@ const CampusParkingApp = () => {
     }
   };
 
-  const validateDateFormat = (dateString) => {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    return dateRegex.test(dateString);
-  };
-
   const handleLogin = async () => {
-    if (!loginForm.email || !loginForm.password) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
-    }
     setLoading(true);
     try {
       const response = await api.login(loginForm.email, loginForm.password, loginForm.role);
@@ -566,6 +685,54 @@ const CampusParkingApp = () => {
       Alert.alert('Signup Failed', error.message || 'Unable to create account. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Date validation and helper functions
+  const validateDateFormat = (dateString) => {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    return dateRegex.test(dateString);
+  };
+
+  const formatDateToString = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseDateString = (dateString) => {
+    if (!dateString) return new Date();
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  // Date picker handlers
+  const handleBookingDateChange = (event, selectedDate) => {
+    setShowBookingDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setBookingForm({ ...bookingForm, date: formatDateToString(selectedDate) });
+    }
+  };
+
+  const handleEventDateChange = (event, selectedDate) => {
+    setShowEventDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setEventForm({ ...eventForm, date: formatDateToString(selectedDate) });
+    }
+  };
+
+  const handleReportStartDateChange = (event, selectedDate) => {
+    setShowReportStartDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setReportForm({ ...reportForm, startDate: formatDateToString(selectedDate) });
+    }
+  };
+
+  const handleReportEndDateChange = (event, selectedDate) => {
+    setShowReportEndDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setReportForm({ ...reportForm, endDate: formatDateToString(selectedDate) });
     }
   };
 
@@ -677,8 +844,8 @@ const CampusParkingApp = () => {
   };
 
   const handleCreateEvent = async () => {
-    if (!eventForm.name || !eventForm.date || !eventForm.allocatedSlots) {
-      Alert.alert('Error', 'Please fill all required fields (Name, Date, Allocated Slots)');
+    if (!eventForm.name || !eventForm.date || !eventForm.allocatedSlots || !eventForm.zone) {
+      Alert.alert('Error', 'Please fill all required fields (Name, Date, Allocated Slots, Zone)');
       return;
     }
     if (!validateDateFormat(eventForm.date)) {
@@ -697,10 +864,11 @@ const CampusParkingApp = () => {
         date: eventForm.date,
         allocatedSlots: slots,
         zone: eventForm.zone,
+        zoneId: eventForm.zoneId,
         description: eventForm.description,
       }, authToken);
       setEvents([...events, response.event]);
-      setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', description: '' });
+      setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', zoneId: null, description: '' });
       setShowEventModal(false);
       Alert.alert('Success', 'Event created successfully!');
     } catch (error) {
@@ -1008,16 +1176,18 @@ const CampusParkingApp = () => {
             {authMode === 'login' ? (
               <View>
                 <Text style={styles.label}>Role</Text>
-                <Picker
-                  selectedValue={loginForm.role}
-                  style={styles.picker}
-                  onValueChange={(value) => setLoginForm({ ...loginForm, role: value })}
-                >
-                  <Picker.Item label="Student" value="student" />
-                  <Picker.Item label="Staff" value="staff" />
-                  <Picker.Item label="Admin" value="admin" />
-                  <Picker.Item label="Visitor" value="visitor" />
-                </Picker>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={loginForm.role}
+                    style={styles.pickerInner}
+                    onValueChange={(value) => setLoginForm({ ...loginForm, role: value })}
+                  >
+                    <Picker.Item label="Student" value="student" />
+                    <Picker.Item label="Staff" value="staff" />
+                    <Picker.Item label="Admin" value="admin" />
+                    <Picker.Item label="Visitor" value="visitor" />
+                  </Picker>
+                </View>
                 <Text style={styles.label}>Email</Text>
                 <TextInput
                   style={styles.input}
@@ -1053,15 +1223,17 @@ const CampusParkingApp = () => {
                   placeholder="John Doe"
                 />
                 <Text style={styles.label}>Role *</Text>
-                <Picker
-                  selectedValue={signupForm.role}
-                  style={styles.picker}
-                  onValueChange={(value) => setSignupForm({ ...signupForm, role: value })}
-                >
-                  <Picker.Item label="Student" value="student" />
-                  <Picker.Item label="Staff" value="staff" />
-                  <Picker.Item label="Visitor" value="visitor" />
-                </Picker>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={signupForm.role}
+                    style={styles.pickerInner}
+                    onValueChange={(value) => setSignupForm({ ...signupForm, role: value })}
+                  >
+                    <Picker.Item label="Student" value="student" />
+                    <Picker.Item label="Staff" value="staff" />
+                    <Picker.Item label="Visitor" value="visitor" />
+                  </Picker>
+                </View>
                 <Text style={styles.label}>Email *</Text>
                 <TextInput
                   style={styles.input}
@@ -1176,13 +1348,25 @@ const CampusParkingApp = () => {
                 onChangeText={(text) => setEventForm({ ...eventForm, name: text })}
                 placeholder="Tech Fest 2025"
               />
-              <Text style={styles.label}>Date * (YYYY-MM-DD)</Text>
-              <TextInput
-                style={styles.input}
-                value={eventForm.date}
-                onChangeText={(text) => setEventForm({ ...eventForm, date: text })}
-                placeholder="2025-10-15"
-              />
+              <Text style={styles.label}>Date *</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowEventDatePicker(true)}
+              >
+                <Calendar color="#4F46E5" size={20} />
+                <Text style={styles.datePickerText}>
+                  {eventForm.date || 'Select Date'}
+                </Text>
+              </TouchableOpacity>
+              {showEventDatePicker && (
+                <DateTimePicker
+                  value={eventForm.date ? parseDateString(eventForm.date) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleEventDateChange}
+                  minimumDate={new Date()}
+                />
+              )}
               <Text style={styles.label}>Allocated Slots *</Text>
               <TextInput
                 style={styles.input}
@@ -1191,13 +1375,32 @@ const CampusParkingApp = () => {
                 keyboardType="numeric"
                 placeholder="100"
               />
-              <Text style={styles.label}>Zone</Text>
-              <TextInput
-                style={styles.input}
-                value={eventForm.zone}
-                onChangeText={(text) => setEventForm({ ...eventForm, zone: text })}
-                placeholder="Zone E - Event Area"
-              />
+              <Text style={styles.label}>Zone *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={eventForm.zone}
+                  style={styles.pickerInner}
+                  onValueChange={(value) => {
+                    const selectedZone = parkingZones.find(z => z.name === value);
+                    setEventForm({ 
+                      ...eventForm, 
+                      zone: value,
+                      zoneId: selectedZone ? selectedZone.id : null
+                    });
+                  }}
+                >
+                  <Picker.Item label="Select a zone..." value="" />
+                  {parkingZones
+                    .filter((z) => z.type === 'event' || z.type === 'general')
+                    .map((zone) => (
+                      <Picker.Item 
+                        key={zone.id} 
+                        label={`${zone.name} (${zone.available}/${zone.total} available)`} 
+                        value={zone.name} 
+                      />
+                    ))}
+                </Picker>
+              </View>
               <Text style={styles.label}>Description</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
@@ -1212,7 +1415,7 @@ const CampusParkingApp = () => {
                   style={[styles.button, styles.buttonHalf, styles.buttonSecondary]}
                   onPress={() => {
                     setShowEventModal(false);
-                    setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', description: '' });
+                    setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', zoneId: null, description: '' });
                   }}
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
@@ -1260,16 +1463,19 @@ const CampusParkingApp = () => {
                 placeholder="50"
               />
               <Text style={styles.label}>Type *</Text>
-              <Picker
-                selectedValue={zoneForm.type}
-                style={styles.picker}
-                onValueChange={(value) => setZoneForm({ ...zoneForm, type: value })}
-              >
-                <Picker.Item label="General" value="general" />
-                <Picker.Item label="Student" value="student" />
-                <Picker.Item label="Staff" value="staff" />
-                <Picker.Item label="Visitor" value="visitor" />
-              </Picker>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={zoneForm.type}
+                  style={styles.pickerInner}
+                  onValueChange={(value) => setZoneForm({ ...zoneForm, type: value })}
+                >
+                  <Picker.Item label="General" value="general" />
+                  <Picker.Item label="Student" value="student" />
+                  <Picker.Item label="Staff" value="staff" />
+                  <Picker.Item label="Visitor" value="visitor" />
+                  <Picker.Item label="Event" value="event" />
+                </Picker>
+              </View>
               <Text style={styles.label}>Location</Text>
               <TextInput
                 style={styles.input}
@@ -1313,19 +1519,42 @@ const CampusParkingApp = () => {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Generate PDF Reports</Text>
               <Text style={styles.label}>Start Date (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={reportForm.startDate}
-                onChangeText={(text) => setReportForm({ ...reportForm, startDate: text })}
-                placeholder="YYYY-MM-DD (e.g., 2025-01-01)"
-              />
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowReportStartDatePicker(true)}
+              >
+                <Calendar color="#4F46E5" size={20} />
+                <Text style={styles.datePickerText}>
+                  {reportForm.startDate || 'Select Start Date'}
+                </Text>
+              </TouchableOpacity>
+              {showReportStartDatePicker && (
+                <DateTimePicker
+                  value={reportForm.startDate ? parseDateString(reportForm.startDate) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleReportStartDateChange}
+                />
+              )}
               <Text style={styles.label}>End Date (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={reportForm.endDate}
-                onChangeText={(text) => setReportForm({ ...reportForm, endDate: text })}
-                placeholder="YYYY-MM-DD (e.g., 2025-12-31)"
-              />
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowReportEndDatePicker(true)}
+              >
+                <Calendar color="#4F46E5" size={20} />
+                <Text style={styles.datePickerText}>
+                  {reportForm.endDate || 'Select End Date'}
+                </Text>
+              </TouchableOpacity>
+              {showReportEndDatePicker && (
+                <DateTimePicker
+                  value={reportForm.endDate ? parseDateString(reportForm.endDate) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleReportEndDateChange}
+                  minimumDate={reportForm.startDate ? parseDateString(reportForm.startDate) : undefined}
+                />
+              )}
               <Text style={styles.reportNote}>
                 💡 Leave dates empty to generate report for all records
               </Text>
@@ -1560,36 +1789,50 @@ const CampusParkingApp = () => {
             <Text style={styles.pageTitle}>Book Parking Slot</Text>
             <View style={styles.card}>
               <Text style={styles.label}>Select Zone</Text>
-              <Picker
-                selectedValue={bookingForm.zone}
-                style={styles.picker}
-                onValueChange={(value) => {
-                  const selectedZone = parkingZones.find(z => z.name === value);
-                  setBookingForm({ 
-                    ...bookingForm, 
-                    zone: value,
-                    zoneId: selectedZone?.id || '' 
-                  });
-                }}
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={bookingForm.zone}
+                  style={styles.pickerInner}
+                  onValueChange={(value) => {
+                    const selectedZone = parkingZones.find(z => z.name === value);
+                    setBookingForm({ 
+                      ...bookingForm, 
+                      zone: value,
+                      zoneId: selectedZone?.id || '' 
+                    });
+                  }}
+                >
+                  <Picker.Item label="Choose a zone..." value="" />
+                  {parkingZones
+                    .filter((z) => z.available > 0)
+                    .map((zone) => (
+                      <Picker.Item 
+                        key={zone.id}
+                        label={`${zone.name} (${zone.available} available)`} 
+                        value={zone.name} 
+                      />
+                    ))}
+                </Picker>
+              </View>
+              <Text style={styles.label}>Date</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowBookingDatePicker(true)}
               >
-                <Picker.Item label="Choose a zone..." value="" />
-                {parkingZones
-                  .filter((z) => z.available > 0)
-                  .map((zone) => (
-                    <Picker.Item 
-                      key={zone.id}
-                      label={`${zone.name} (${zone.available} available)`} 
-                      value={zone.name} 
-                    />
-                  ))}
-              </Picker>
-              <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-              <TextInput
-                style={styles.input}
-                value={bookingForm.date}
-                onChangeText={(text) => setBookingForm({ ...bookingForm, date: text })}
-                placeholder="2025-10-15"
-              />
+                <Calendar color="#4F46E5" size={20} />
+                <Text style={styles.datePickerText}>
+                  {bookingForm.date || 'Select Date'}
+                </Text>
+              </TouchableOpacity>
+              {showBookingDatePicker && (
+                <DateTimePicker
+                  value={bookingForm.date ? parseDateString(bookingForm.date) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleBookingDateChange}
+                  minimumDate={new Date()}
+                />
+              )}
               <Text style={styles.label}>Duration (hours)</Text>
               <TextInput
                 style={styles.input}
@@ -1706,7 +1949,7 @@ const CampusParkingApp = () => {
               <TouchableOpacity
                 style={styles.addButton}
                 onPress={() => {
-                  setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', description: '' });
+                  setEventForm({ name: '', date: '', allocatedSlots: '', zone: '', zoneId: null, description: '' });
                   setShowEventModal(true);
                 }}
               >
@@ -1923,6 +2166,51 @@ const styles = StyleSheet.create({
         color: '#000',
       },
     }),
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        height: 50,
+        justifyContent: 'center',
+      },
+      android: {
+        height: 50,
+      },
+    }),
+  },
+  pickerInner: {
+    ...Platform.select({
+      ios: {
+        height: 50,
+      },
+      android: {
+        color: '#000',
+        height: 50,
+      },
+    }),
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    marginBottom: 16,
+    height: 50,
+    gap: 10,
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: '#374151',
+    flex: 1,
   },
   button: {
     backgroundColor: '#2563EB',

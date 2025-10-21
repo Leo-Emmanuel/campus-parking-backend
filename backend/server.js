@@ -14,6 +14,7 @@ const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const PDFDocument = require('pdfkit');
 const cron = require('node-cron');
+const { Expo } = require('expo-server-sdk');
 require('dotenv').config();
 
 const app = express();
@@ -88,6 +89,46 @@ mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
 });
+
+// ===== PUSH NOTIFICATION SETUP =====
+
+const expo = new Expo();
+
+// Helper function to send push notifications
+async function sendPushNotification(pushToken, title, body, data = {}) {
+  if (!Expo.isExpoPushToken(pushToken)) {
+    console.error(`Push token ${pushToken} is not a valid Expo push token`);
+    return;
+  }
+
+  const messages = [{
+    to: pushToken,
+    sound: 'default',
+    title: title,
+    body: body,
+    data: data,
+  }];
+
+  try {
+    const chunks = expo.chunkPushNotifications(messages);
+    const tickets = [];
+    
+    for (const chunk of chunks) {
+      try {
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+      } catch (error) {
+        console.error('Error sending push notification chunk:', error);
+      }
+    }
+    
+    console.log('Push notification sent successfully:', tickets);
+    return tickets;
+  } catch (error) {
+    console.error('Error sending push notification:', error);
+    throw error;
+  }
+}
 
 // ===== WEBSOCKET SETUP =====
 
@@ -773,6 +814,22 @@ app.post('/api/bookings', authenticateToken, bookingValidation, handleValidation
       timestamp: new Date()
     });
 
+    // Send push notification
+    try {
+      const user = await User.findById(userId);
+      if (user && user.pushToken) {
+        await sendPushNotification(
+          user.pushToken,
+          'Booking Confirmed! 🎉',
+          `Your parking slot at ${zoneName} has been confirmed for ${date}`,
+          { screen: 'bookings' }
+        );
+      }
+    } catch (pushError) {
+      console.error('Error sending push notification:', pushError);
+      // Don't fail the booking if push notification fails
+    }
+
     res.json({
       success: true,
       booking: {
@@ -1223,7 +1280,7 @@ app.post('/api/events', authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
-    const { name, date, allocatedSlots } = req.body;
+    const { name, date, allocatedSlots, zone, zoneId } = req.body;
 
     if (!name || !date || allocatedSlots === undefined) {
       return res.status(400).json({ 
@@ -1232,13 +1289,36 @@ app.post('/api/events', authenticateToken, async (req, res) => {
       });
     }
 
-    const event = new Event(req.body);
+    // Validate zoneId if provided
+    if (zoneId && mongoose.Types.ObjectId.isValid(zoneId)) {
+      const zoneExists = await Zone.findById(zoneId);
+      if (!zoneExists) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Selected zone does not exist' 
+        });
+      }
+    }
+
+    const event = new Event({
+      name,
+      date,
+      allocatedSlots,
+      zone,
+      zoneId,
+      description: req.body.description,
+      organizer: req.user.id,
+    });
+    
     await event.save();
 
     res.json({ success: true, event });
   } catch (error) {
     console.error('Create event error:', error);
-    res.status(500).json({ success: false, message: 'Server error creating event' });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Server error creating event' 
+    });
   }
 });
 
@@ -1531,6 +1611,41 @@ app.patch('/api/users/:userId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ success: false, message: 'Server error updating profile' });
+  }
+});
+
+app.post('/api/users/:userId/push-token', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { pushToken } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
+    }
+
+    if (req.user.id !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+
+    if (!pushToken) {
+      return res.status(400).json({ success: false, message: 'Push token is required' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { pushToken },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    console.log(`Push token registered for user ${user.email}: ${pushToken}`);
+    res.json({ success: true, message: 'Push token registered successfully' });
+  } catch (error) {
+    console.error('Register push token error:', error);
+    res.status(500).json({ success: false, message: 'Server error registering push token' });
   }
 });
 

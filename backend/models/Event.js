@@ -10,17 +10,28 @@ const eventSchema = new mongoose.Schema({
   description: {
     type: String,
   },
-  eventDate: {
+  date: {
     type: Date,
     required: true,
+  },
+  allocatedSlots: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  zone: {
+    type: String,
+    trim: true,
+  },
+  zoneId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ParkingZone',
   },
   startTime: {
     type: Date,
-    required: true,
   },
   endTime: {
     type: Date,
-    required: true,
   },
   allocatedZones: [{
     zone: {
@@ -29,10 +40,6 @@ const eventSchema = new mongoose.Schema({
     },
     allocatedSlots: Number,
   }],
-  totalAllocatedSlots: {
-    type: Number,
-    required: true,
-  },
   bookedSlots: {
     type: Number,
     default: 0,
