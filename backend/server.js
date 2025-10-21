@@ -1758,6 +1758,40 @@ app.post('/api/users/:userId/push-token', authenticateToken, async (req, res) =>
   }
 });
 
+// Test endpoint to manually send push notification
+app.post('/api/test/push-notification', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.pushToken) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No push token found for user. Please login again to register token.' 
+      });
+    }
+
+    await sendPushNotification(
+      user.pushToken,
+      'Test Notification 🔔',
+      'This is a test push notification from Campus Parking!',
+      { screen: 'notifications' }
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Test notification sent!',
+      pushToken: user.pushToken
+    });
+  } catch (error) {
+    console.error('Test push notification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error sending test notification',
+      error: error.message
+    });
+  }
+});
+
 // ===== UTILITY ROUTES =====
 
 app.get('/api/ws/status', (req, res) => {

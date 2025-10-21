@@ -1390,15 +1390,13 @@ const CampusParkingApp = () => {
                   }}
                 >
                   <Picker.Item label="Select a zone..." value="" />
-                  {parkingZones
-                    .filter((z) => z.type === 'event' || z.type === 'general')
-                    .map((zone) => (
-                      <Picker.Item 
-                        key={zone.id} 
-                        label={`${zone.name} (${zone.available}/${zone.total} available)`} 
-                        value={zone.name} 
-                      />
-                    ))}
+                  {parkingZones.map((zone) => (
+                    <Picker.Item 
+                      key={zone.id} 
+                      label={`${zone.name} (${zone.available}/${zone.total} available)`} 
+                      value={zone.name} 
+                    />
+                  ))}
                 </Picker>
               </View>
               <Text style={styles.label}>Description</Text>
