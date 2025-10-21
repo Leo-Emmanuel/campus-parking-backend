@@ -50,25 +50,20 @@ app.use('/api/', limiter);
 
 // ===== ROUTE IMPORTS =====
 const adminRoutes = require('./routes/adminRoutes');
-const authRoutes = require('./routes/auth');
-const bookingRoutes = require('./routes/bookings');
-const eventRoutes = require('./routes/events');
-const notificationRoutes = require('./routes/notifications');
-const zoneRoutes = require('./routes/zones');
+// Note: Other routes (auth, zones, bookings, events, notifications) are defined inline below
+// The modular route files exist but are not used in favor of inline definitions with WebSocket support
 
 // ===== ROUTE MOUNTING =====
 app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/zones', zoneRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     success: true, 
     message: 'Campus Parking API is running',
+    websocket: wss.clients.size > 0 ? 'active' : 'no clients',
+    connectedClients: wss.clients.size,
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -1540,17 +1535,6 @@ app.patch('/api/users/:userId', authenticateToken, async (req, res) => {
 });
 
 // ===== UTILITY ROUTES =====
-
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Server is running',
-    websocket: wss.clients.size > 0 ? 'active' : 'no clients',
-    connectedClients: wss.clients.size,
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString(),
-  });
-});
 
 app.get('/api/ws/status', (req, res) => {
   res.json({
