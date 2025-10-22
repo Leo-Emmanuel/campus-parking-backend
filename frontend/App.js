@@ -319,6 +319,7 @@ const CampusParkingApp = () => {
   const [showEventModal, setShowEventModal] = useState(false);
   const [showZoneModal, setShowZoneModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [creatingZoneFromEvent, setCreatingZoneFromEvent] = useState(false);
   const [eventForm, setEventForm] = useState({
     name: '',
     date: '',
@@ -896,12 +897,27 @@ const CampusParkingApp = () => {
         type: zoneForm.type,
         location: zoneForm.location,
       };
+      let createdZoneName = zoneForm.name;
+      let createdZoneId = zoneForm.id;
+      
       if (editMode) {
         await api.updateZone(zoneForm.id, zoneData, authToken);
       } else {
-        await api.createZone(zoneData, authToken);
+        const response = await api.createZone(zoneData, authToken);
+        createdZoneId = response.zone._id || response.zone.id;
       }
       await fetchParkingZones();
+      
+      // If creating zone from event modal, auto-select it in event form
+      if (creatingZoneFromEvent && !editMode) {
+        setEventForm({
+          ...eventForm,
+          zone: createdZoneName,
+          zoneId: createdZoneId
+        });
+        setCreatingZoneFromEvent(false);
+      }
+      
       setZoneForm({ id: '', name: '', total: '', type: 'general', location: '' });
       setShowZoneModal(false);
       setEditMode(false);
@@ -1381,15 +1397,23 @@ const CampusParkingApp = () => {
                   selectedValue={eventForm.zone}
                   style={styles.pickerInner}
                   onValueChange={(value) => {
-                    const selectedZone = parkingZones.find(z => z.name === value);
-                    setEventForm({ 
-                      ...eventForm, 
-                      zone: value,
-                      zoneId: selectedZone ? selectedZone.id : null
-                    });
+                    if (value === '__CREATE_NEW__') {
+                      setCreatingZoneFromEvent(true);
+                      setZoneForm({ id: '', name: '', total: '', type: 'event', location: '' });
+                      setEditMode(false);
+                      setShowZoneModal(true);
+                    } else {
+                      const selectedZone = parkingZones.find(z => z.name === value);
+                      setEventForm({ 
+                        ...eventForm, 
+                        zone: value,
+                        zoneId: selectedZone ? selectedZone.id : null
+                      });
+                    }
                   }}
                 >
                   <Picker.Item label="Select a zone..." value="" />
+                  <Picker.Item label="➕ Create New Zone" value="__CREATE_NEW__" />
                   {parkingZones.map((zone) => (
                     <Picker.Item 
                       key={zone.id} 
@@ -1487,6 +1511,7 @@ const CampusParkingApp = () => {
                   onPress={() => {
                     setShowZoneModal(false);
                     setEditMode(false);
+                    setCreatingZoneFromEvent(false);
                     setZoneForm({ id: '', name: '', total: '', type: 'general', location: '' });
                   }}
                 >
@@ -1750,17 +1775,24 @@ const CampusParkingApp = () => {
                   <View style={styles.cardHeader}>
                     <View>
                       <Text style={styles.cardTitle}>{zone.name}</Text>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{zone.type}</Text>
+                      <View style={[
+                        styles.badge,
+                        zone.type === 'event' && styles.badgeEvent
+                      ]}>
+                        <Text style={[
+                          styles.badgeText,
+                          zone.type === 'event' && styles.badgeTextEvent
+                        ]}>{zone.type}</Text>
                       </View>
                     </View>
-                    <MapPin color="#2563EB" size={24} />
+                    <MapPin color={zone.type === 'event' ? '#9333EA' : '#2563EB'} size={24} />
                   </View>
                   <View style={styles.cardContent}>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Available</Text>
                       <Text style={[
                         styles.availabilityValue,
+                        zone.type === 'event' && styles.availabilityValueEvent,
                         zone.available === 0 && styles.availabilityZero
                       ]}>
                         {zone.available}/{zone.total}
@@ -1768,7 +1800,8 @@ const CampusParkingApp = () => {
                     </View>
                     <View style={styles.progressBar}>
                       <View style={[
-                        styles.progressFill, 
+                        styles.progressFill,
+                        zone.type === 'event' && styles.progressFillEvent,
                         { width: `${(zone.available / zone.total) * 100}%` },
                         zone.available === 0 && styles.progressEmpty
                       ]} />
@@ -2412,11 +2445,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
     alignSelf: 'flex-start',
   },
+  badgeEvent: {
+    backgroundColor: '#F3E8FF',
+  },
   badgeText: {
     fontSize: 12,
     color: '#1E40AF',
     fontWeight: '600',
     textTransform: 'uppercase',
+  },
+  badgeTextEvent: {
+    color: '#7C3AED',
   },
   cardContent: {
     marginTop: 8,
@@ -2435,6 +2474,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#10B981',
   },
+  availabilityValueEvent: {
+    color: '#9333EA',
+  },
   availabilityZero: {
     color: '#DC2626',
   },
@@ -2449,6 +2491,9 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#10B981',
     borderRadius: 4,
+  },
+  progressFillEvent: {
+    backgroundColor: '#9333EA',
   },
   progressEmpty: {
     backgroundColor: '#DC2626',

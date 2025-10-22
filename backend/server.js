@@ -564,7 +564,21 @@ app.post('/api/zones', authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
-    const zone = new Zone(req.body);
+    // Prepare zone data with required fields
+    const zoneData = {
+      ...req.body,
+      totalSlots: req.body.total || req.body.totalSlots,
+      availableSlots: req.body.total || req.body.totalSlots,
+    };
+
+    // Auto-generate code if not provided
+    if (!zoneData.code) {
+      const prefix = (zoneData.type || 'general').substring(0, 3).toUpperCase();
+      const timestamp = Date.now().toString().slice(-4);
+      zoneData.code = `${prefix}-${timestamp}`;
+    }
+
+    const zone = new Zone(zoneData);
     await zone.save();
 
     broadcast({
