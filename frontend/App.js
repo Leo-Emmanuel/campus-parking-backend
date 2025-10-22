@@ -829,15 +829,21 @@ const CampusParkingApp = () => {
         text: 'Logout',
         style: 'destructive',
         onPress: () => {
+          // Clear all user data
           setCurrentUser(null);
           setAuthToken(null);
           setActiveTab('dashboard');
           setShowMenu(false);
-          setAuthMode('login');
           setBookings([]);
           setNotifications([]);
           setEvents([]);
+          setParkingZones([]);
           setLoginForm({ email: '', password: '', role: 'student' });
+          setSignupForm({ name: '', email: '', password: '', role: 'student', phone: '', vehicleNumber: '' });
+          
+          // Redirect to login page
+          setAuthMode('login');
+          
           Alert.alert('Success', 'Logged out successfully');
         },
       },
@@ -1394,27 +1400,18 @@ const CampusParkingApp = () => {
               <Text style={styles.label}>Zone *</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-                  selectedValue={eventForm.zone === '__CREATE_NEW__' ? '' : eventForm.zone}
+                  selectedValue={eventForm.zone}
                   style={styles.pickerInner}
                   onValueChange={(value) => {
-                    if (value === '__CREATE_NEW__') {
-                      // Don't set the zone to __CREATE_NEW__, just open the modal
-                      setCreatingZoneFromEvent(true);
-                      setZoneForm({ id: '', name: '', total: '', type: 'event', location: '' });
-                      setEditMode(false);
-                      setShowZoneModal(true);
-                    } else {
-                      const selectedZone = parkingZones.find(z => z.name === value);
-                      setEventForm({ 
-                        ...eventForm, 
-                        zone: value,
-                        zoneId: selectedZone ? selectedZone.id : null
-                      });
-                    }
+                    const selectedZone = parkingZones.find(z => z.name === value);
+                    setEventForm({ 
+                      ...eventForm, 
+                      zone: value,
+                      zoneId: selectedZone ? selectedZone.id : null
+                    });
                   }}
                 >
                   <Picker.Item label="Select a zone..." value="" />
-                  <Picker.Item label="➕ Create New Zone" value="__CREATE_NEW__" />
                   {parkingZones.map((zone) => (
                     <Picker.Item 
                       key={zone.id} 
