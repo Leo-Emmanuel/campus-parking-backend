@@ -1634,7 +1634,7 @@ const CampusParkingApp = () => {
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Campus Parking</Text>
             <Text style={styles.headerSubtitle}>
-              {currentUser.name} • {currentUser.role.toUpperCase()}
+              {currentUser?.name} • {currentUser?.role?.toUpperCase()}
             </Text>
           </View>
         </View>
@@ -1724,6 +1724,10 @@ const CampusParkingApp = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
+                console.log('Manage Zones clicked');
+                console.log('currentUser:', currentUser);
+                console.log('currentUser.role:', currentUser?.role);
+                console.log('Setting activeTab to zones');
                 setActiveTab('zones');
                 setShowMenu(false);
               }}
@@ -2024,6 +2028,14 @@ const CampusParkingApp = () => {
             )}
           </View>
         )}
+        {(() => {
+          console.log('Checking zones tab condition:');
+          console.log('  activeTab:', activeTab);
+          console.log('  currentUser exists:', !!currentUser);
+          console.log('  currentUser.role:', currentUser?.role);
+          console.log('  Condition result:', activeTab === 'zones' && currentUser && currentUser.role === 'admin');
+          return null;
+        })()}
         {activeTab === 'zones' && currentUser && currentUser.role === 'admin' && (
           <View>
             <View style={styles.pageHeader}>
