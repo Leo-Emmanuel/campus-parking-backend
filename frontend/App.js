@@ -59,8 +59,8 @@ const API_BASE_URL = 'https://campus-parking-backend-1.onrender.com/api';
 const WS_URL = 'wss://campus-parking-backend-1.onrender.com';
 
 // Local development URL (uncomment for local testing)
-// const API_BASE_URL = 'http://192.168.1.2:5000/api';
-// const WS_URL = 'ws://192.168.1.2:5000';
+//const API_BASE_URL = 'http://10.0.12.120:5000/api';
+//const WS_URL = 'ws://10.0.12.120:5000';
 
 // API helper functions
 const api = {
@@ -104,6 +104,18 @@ const api = {
       const response = await fetch(`${API_BASE_URL}/zones`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
+      // Backend returns { status: 'success', data: { zones: [...] } }
+      // Transform to match frontend expectations
+      if (data.status === 'success' && data.data && data.data.zones) {
+        return data.data.zones.map(zone => ({
+          id: zone._id || zone.id,
+          name: zone.name,
+          total: zone.totalSlots || zone.total,
+          available: zone.availableSlots || zone.available,
+          type: zone.type,
+          location: zone.location
+        }));
+      }
       return data;
     } catch (error) {
       console.error('Get zones API error:', error);
@@ -235,12 +247,24 @@ const api = {
         },
         body: JSON.stringify(zoneData),
       });
+      
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server error: Expected JSON but got ${contentType || 'unknown type'}`);
+      }
+      
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
-      if (!data.success) throw new Error(data.message || 'Zone creation failed');
-      return data;
+      if (data.status !== 'success') throw new Error(data.message || 'Zone creation failed');
+      return { success: true, zone: data.data.zone };
     } catch (error) {
       console.error('Create zone API error:', error);
+      if (error.message.includes('JSON')) {
+        throw new Error('Server returned invalid response. Please check backend connection.');
+      }
       throw error;
     }
   },
@@ -255,12 +279,24 @@ const api = {
         },
         body: JSON.stringify(zoneData),
       });
+      
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server error: Expected JSON but got ${contentType || 'unknown type'}`);
+      }
+      
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
-      if (!data.success) throw new Error(data.message || 'Zone update failed');
-      return data;
+      if (data.status !== 'success') throw new Error(data.message || 'Zone update failed');
+      return { success: true, zone: data.data.zone };
     } catch (error) {
       console.error('Update zone API error:', error);
+      if (error.message.includes('JSON')) {
+        throw new Error('Server returned invalid response. Please check backend connection.');
+      }
       throw error;
     }
   },
@@ -592,10 +628,10 @@ const CampusParkingApp = () => {
 
       return () => {
         if (notificationListener.current) {
-          Notifications.removeNotificationSubscription(notificationListener.current);
+          notificationListener.current.remove();
         }
         if (responseListener.current) {
-          Notifications.removeNotificationSubscription(responseListener.current);
+          responseListener.current.remove();
         }
       };
     }
@@ -1326,24 +1362,24 @@ const CampusParkingApp = () => {
             <Text style={styles.modalTitle}>Your Parking QR Code</Text>
             <View style={styles.qrContainer}>
               <QrCode size={200} color="#1F2937" />
-              <Text style={styles.qrCode}>{selectedBooking.qrCode}</Text>
+              <Text style={styles.qrCode}>{String(selectedBooking.qrCode || '')}</Text>
             </View>
             <View style={styles.qrDetails}>
               <Text style={styles.qrDetail}>
-                <Text style={styles.qrLabel}>Zone:</Text> {selectedBooking.zone}
+                <Text style={styles.qrLabel}>Zone:</Text> {String(selectedBooking.zone || '')}
               </Text>
               <Text style={styles.qrDetail}>
-                <Text style={styles.qrLabel}>Date:</Text> {selectedBooking.date}
+                <Text style={styles.qrLabel}>Date:</Text> {String(selectedBooking.date || '')}
               </Text>
               <Text style={styles.qrDetail}>
-                <Text style={styles.qrLabel}>Time:</Text> {selectedBooking.time}
+                <Text style={styles.qrLabel}>Time:</Text> {String(selectedBooking.time || '')}
               </Text>
               <Text style={styles.qrDetail}>
-                <Text style={styles.qrLabel}>Duration:</Text> {selectedBooking.duration} hours
+                <Text style={styles.qrLabel}>Duration:</Text> {String(selectedBooking.duration || '')} hours
               </Text>
               <Text style={styles.qrDetail}>
                 <Text style={styles.qrLabel}>Status:</Text>{' '}
-                <Text style={styles.qrStatus}>{selectedBooking.status}</Text>
+                <Text style={styles.qrStatus}>{String(selectedBooking.status || '')}</Text>
               </Text>
             </View>
             <Text style={styles.qrNote}>📱 Scan this QR code at the entry and exit gates</Text>
@@ -1415,8 +1451,8 @@ const CampusParkingApp = () => {
                   {parkingZones.map((zone) => (
                     <Picker.Item 
                       key={zone.id} 
-                      label={`${zone.name} (${zone.available}/${zone.total} available)`} 
-                      value={zone.name} 
+                      label={`${String(zone.name || '')} (${String(zone.available || 0)}/${String(zone.total || 0)} available)`} 
+                      value={String(zone.name || '')} 
                     />
                   ))}
                 </Picker>
@@ -1634,7 +1670,7 @@ const CampusParkingApp = () => {
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Campus Parking</Text>
             <Text style={styles.headerSubtitle}>
-              {currentUser?.name} • {currentUser?.role?.toUpperCase()}
+              {String(currentUser?.name || '')} • {String(currentUser?.role || '').toUpperCase()}
             </Text>
           </View>
         </View>
@@ -1776,7 +1812,7 @@ const CampusParkingApp = () => {
                 <View key={zone.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View>
-                      <Text style={styles.cardTitle}>{zone.name}</Text>
+                      <Text style={styles.cardTitle}>{String(zone.name || '')}</Text>
                       <View style={[
                         styles.badge,
                         zone.type === 'event' && styles.badgeEvent
@@ -1784,7 +1820,7 @@ const CampusParkingApp = () => {
                         <Text style={[
                           styles.badgeText,
                           zone.type === 'event' && styles.badgeTextEvent
-                        ]}>{zone.type}</Text>
+                        ]}>{String(zone.type || '')}</Text>
                       </View>
                     </View>
                     <MapPin color={zone.type === 'event' ? '#9333EA' : '#2563EB'} size={24} />
@@ -1797,7 +1833,7 @@ const CampusParkingApp = () => {
                         zone.type === 'event' && styles.availabilityValueEvent,
                         zone.available === 0 && styles.availabilityZero
                       ]}>
-                        {zone.available}/{zone.total}
+                        {String(zone.available || 0)}/{String(zone.total || 0)}
                       </Text>
                     </View>
                     <View style={styles.progressBar}>
@@ -1841,8 +1877,8 @@ const CampusParkingApp = () => {
                     .map((zone) => (
                       <Picker.Item 
                         key={zone.id}
-                        label={`${zone.name} (${zone.available} available)`} 
-                        value={zone.name} 
+                        label={`${String(zone.name || '')} (${String(zone.available || 0)} available)`} 
+                        value={String(zone.name || '')} 
                       />
                     ))}
                 </Picker>
@@ -1907,13 +1943,13 @@ const CampusParkingApp = () => {
                 <View key={booking.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View>
-                      <Text style={styles.cardTitle}>{booking.zone}</Text>
+                      <Text style={styles.cardTitle}>{String(booking.zone || '')}</Text>
                       <Text style={styles.cardSubtitle}>
-                        {booking.date} • {booking.time}
+                        {String(booking.date || '')} • {String(booking.time || '')}
                       </Text>
                     </View>
                     <View style={[styles.statusBadge, booking.status === 'active' ? styles.statusActive : styles.statusCompleted]}>
-                      <Text style={styles.statusText}>{booking.status}</Text>
+                      <Text style={styles.statusText}>{String(booking.status || '')}</Text>
                     </View>
                   </View>
                   <View style={styles.buttonRow}>
@@ -1966,9 +2002,9 @@ const CampusParkingApp = () => {
                     )}
                   </View>
                   <View style={styles.notificationContent}>
-                    <Text style={styles.notificationTitle}>{notif.title}</Text>
-                    <Text style={styles.notificationMessage}>{notif.message}</Text>
-                    <Text style={styles.notificationTime}>{notif.time}</Text>
+                    <Text style={styles.notificationTitle}>{String(notif.title || '')}</Text>
+                    <Text style={styles.notificationMessage}>{String(notif.message || '')}</Text>
+                    <Text style={styles.notificationTime}>{String(notif.time || '')}</Text>
                   </View>
                 </View>
               ))
@@ -2000,9 +2036,9 @@ const CampusParkingApp = () => {
                 <View key={event.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View>
-                      <Text style={styles.cardTitle}>{event.name}</Text>
+                      <Text style={styles.cardTitle}>{String(event.name || '')}</Text>
                       <Text style={styles.cardSubtitle}>
-                        {event.date} • {event.zone}
+                        {String(event.date || '')} • {String(event.zone || '')}
                       </Text>
                     </View>
                     <Users color="#9333EA" size={24} />
@@ -2010,10 +2046,10 @@ const CampusParkingApp = () => {
                   <View style={styles.cardContent}>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Allocated Slots</Text>
-                      <Text style={[styles.availabilityValue, { color: '#9333EA' }]}>{event.allocatedSlots}</Text>
+                      <Text style={[styles.availabilityValue, { color: '#9333EA' }]}>{String(event.allocatedSlots || '')}</Text>
                     </View>
                     {event.description && (
-                      <Text style={styles.eventDescription}>{event.description}</Text>
+                      <Text style={styles.eventDescription}>{String(event.description || '')}</Text>
                     )}
                   </View>
                   <TouchableOpacity
@@ -2062,9 +2098,9 @@ const CampusParkingApp = () => {
                 <View key={zone.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View>
-                      <Text style={styles.cardTitle}>{zone.name}</Text>
+                      <Text style={styles.cardTitle}>{String(zone.name || '')}</Text>
                       <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{zone.type}</Text>
+                        <Text style={styles.badgeText}>{String(zone.type || '')}</Text>
                       </View>
                     </View>
                     <MapPin color="#2563EB" size={24} />
@@ -2072,7 +2108,7 @@ const CampusParkingApp = () => {
                   <View style={styles.cardContent}>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Total Capacity</Text>
-                      <Text style={styles.availabilityValue}>{zone.total} spots</Text>
+                      <Text style={styles.availabilityValue}>{String(zone.total || 0)} spots</Text>
                     </View>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Currently Available</Text>
@@ -2080,11 +2116,11 @@ const CampusParkingApp = () => {
                         styles.availabilityValue,
                         zone.available === 0 && styles.availabilityZero
                       ]}>
-                        {zone.available} spots
+                        {String(zone.available || 0)} spots
                       </Text>
                     </View>
                     {zone.location && (
-                      <Text style={styles.zoneLocation}>📍 {zone.location}</Text>
+                      <Text style={styles.zoneLocation}>📍 {String(zone.location || '')}</Text>
                     )}
                   </View>
                   <TouchableOpacity
