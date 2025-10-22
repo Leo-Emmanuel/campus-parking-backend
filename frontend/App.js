@@ -301,6 +301,34 @@ const api = {
     }
   },
 
+  deleteZone: async (zoneId, token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/zones/${zoneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text.substring(0, 200));
+        throw new Error(`Server error: Expected JSON but got ${contentType || 'unknown type'}`);
+      }
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+      if (data.status !== 'success') throw new Error(data.message || 'Zone deletion failed');
+      return { success: true, message: data.message };
+    } catch (error) {
+      console.error('Delete zone API error:', error);
+      if (error.message.includes('JSON')) {
+        throw new Error('Server returned invalid response. Please check backend connection.');
+      }
+      throw error;
+    }
+  },
+
   registerPushToken: async (userId, pushToken, token) => {
     try {
       const response = await fetch(`${API_BASE_URL}/users/${userId}/push-token`, {
@@ -981,6 +1009,32 @@ const CampusParkingApp = () => {
     });
     setEditMode(true);
     setShowZoneModal(true);
+  };
+
+  const handleDeleteZone = async (zoneId, zoneName) => {
+    Alert.alert(
+      'Delete Zone',
+      `Are you sure you want to delete "${zoneName}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await api.deleteZone(zoneId, authToken);
+              await fetchParkingZones();
+              Alert.alert('Success', 'Zone deleted successfully');
+            } catch (error) {
+              Alert.alert('Error', error.message || 'Failed to delete zone. Please try again.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleDeleteEvent = async (eventId) => {
@@ -2123,12 +2177,20 @@ const CampusParkingApp = () => {
                       <Text style={styles.zoneLocation}>📍 {String(zone.location || '')}</Text>
                     )}
                   </View>
-                  <TouchableOpacity
-                    style={[styles.button, styles.buttonPurple]}
-                    onPress={() => handleEditZone(zone)}
-                  >
-                    <Text style={styles.buttonText}>Edit Zone</Text>
-                  </TouchableOpacity>
+                  <View style={styles.buttonRow}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonHalf, styles.buttonPurple]}
+                      onPress={() => handleEditZone(zone)}
+                    >
+                      <Text style={styles.buttonText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonHalf, styles.buttonDanger]}
+                      onPress={() => handleDeleteZone(zone.id, zone.name)}
+                    >
+                      <Text style={styles.buttonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))
             )}
