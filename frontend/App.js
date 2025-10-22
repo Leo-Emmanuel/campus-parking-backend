@@ -1394,10 +1394,11 @@ const CampusParkingApp = () => {
               <Text style={styles.label}>Zone *</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-                  selectedValue={eventForm.zone}
+                  selectedValue={eventForm.zone === '__CREATE_NEW__' ? '' : eventForm.zone}
                   style={styles.pickerInner}
                   onValueChange={(value) => {
                     if (value === '__CREATE_NEW__') {
+                      // Don't set the zone to __CREATE_NEW__, just open the modal
                       setCreatingZoneFromEvent(true);
                       setZoneForm({ id: '', name: '', total: '', type: 'event', location: '' });
                       setEditMode(false);

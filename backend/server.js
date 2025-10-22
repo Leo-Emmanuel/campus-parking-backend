@@ -1391,7 +1391,7 @@ app.post('/api/events', authenticateToken, async (req, res) => {
 
       // Calculate new available considering event allocation
       const eventAllocations = await Event.aggregate([
-        { $match: { zoneId: mongoose.Types.ObjectId(zoneId), date: { $gte: new Date() } } },
+        { $match: { zoneId: new mongoose.Types.ObjectId(zoneId), date: { $gte: new Date() } } },
         { $group: { _id: null, total: { $sum: '$allocatedSlots' } } }
       ]);
       const totalEventSlots = eventAllocations.length > 0 ? eventAllocations[0].total : 0;
