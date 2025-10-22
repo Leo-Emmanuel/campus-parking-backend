@@ -1708,7 +1708,7 @@ const CampusParkingApp = () => {
               </View>
             )}
           </TouchableOpacity>
-          {currentUser.role === 'admin' && (
+          {currentUser && currentUser.role === 'admin' && (
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
@@ -1720,7 +1720,7 @@ const CampusParkingApp = () => {
               <Text style={styles.menuText}>Event Management</Text>
             </TouchableOpacity>
           )}
-          {currentUser.role === 'admin' && (
+          {currentUser && currentUser.role === 'admin' && (
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
@@ -1732,7 +1732,7 @@ const CampusParkingApp = () => {
               <Text style={styles.menuText}>Manage Zones</Text>
             </TouchableOpacity>
           )}
-          {currentUser.role === 'admin' && (
+          {currentUser && currentUser.role === 'admin' && (
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
@@ -1971,7 +1971,7 @@ const CampusParkingApp = () => {
             )}
           </View>
         )}
-        {activeTab === 'events' && currentUser.role === 'admin' && (
+        {activeTab === 'events' && currentUser && currentUser.role === 'admin' && (
           <View>
             <View style={styles.pageHeader}>
               <Text style={styles.pageTitle}>Event Parking Management</Text>
@@ -2024,7 +2024,7 @@ const CampusParkingApp = () => {
             )}
           </View>
         )}
-        {activeTab === 'zones' && currentUser.role === 'admin' && (
+        {activeTab === 'zones' && currentUser && currentUser.role === 'admin' && (
           <View>
             <View style={styles.pageHeader}>
               <Text style={styles.pageTitle}>Manage Parking Zones</Text>
