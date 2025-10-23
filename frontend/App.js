@@ -59,7 +59,7 @@ const API_BASE_URL = 'https://campus-parking-backend-1.onrender.com/api';
 const WS_URL = 'wss://campus-parking-backend-1.onrender.com';
 
 // Local development URL (uncomment for local testing)
-//const API_BASE_URL = 'http://10.0.12.120:5000/api';
+//const API_BASE_URL = 'http://10.0.12.1''''20:5000/api';
 //const WS_URL = 'ws://10.0.12.120:5000';
 
 // API helper functions
@@ -1083,19 +1083,12 @@ const CampusParkingApp = () => {
 
     setLoading(true);
     try {
-      let endpoint = '';
-      switch (reportType) {
-        case 'visitors':
-          endpoint = `${API_BASE_URL}/admin/reports/visitors/pdf`;
-          break;
-        case 'events':
-          endpoint = `${API_BASE_URL}/admin/reports/events/pdf`;
-          break;
-        case 'combined':
-          endpoint = `${API_BASE_URL}/admin/reports/combined/pdf`;
-          break;
-        default:
-          throw new Error('Invalid report type');
+      let endpoint = `${API_BASE_URL}/admin/reports/${reportType}/pdf`;
+      const queryParams = new URLSearchParams();
+      if (startDate) queryParams.append('startDate', startDate);
+      if (endDate) queryParams.append('endDate', endDate);
+      if (queryParams.toString()) {
+        endpoint += `?${queryParams.toString()}`;
       }
 
       console.log('Download endpoint:', endpoint);
@@ -1168,7 +1161,6 @@ const CampusParkingApp = () => {
         fileUri,
         {
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`,
           },
         }

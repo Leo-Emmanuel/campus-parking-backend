@@ -2343,17 +2343,17 @@ app.get('/api/admin/reports/export', authenticateToken, async (req, res) => {
 });
 
 /**
- * @route POST /api/reports/visitors/pdf
+ * @route GET /api/admin/reports/visitors/pdf
  * @description Generate a PDF report of visitors within a date range (returns base64)
  * @access Private (Admin only)
  */
-app.post('/api/reports/visitors/pdf', authenticateToken, async (req, res) => {
+app.get('/api/admin/reports/visitors/pdf', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
-    const { startDate, endDate } = req.body;
+    const { startDate, endDate } = req.query;
     
     if (!startDate || !endDate) {
       return res.status(400).json({ 
@@ -2494,6 +2494,328 @@ app.post('/api/reports/visitors/pdf', authenticateToken, async (req, res) => {
     });
   }
 });
+
+/**
+ * @route GET /api/admin/reports/events/pdf
+ * @description Generate a PDF report of events within a date range (returns base64)
+ * @access Private (Admin only)
+ */
+app.get('/api/admin/reports/events/pdf', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Start date and end date are required' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid date format. Use YYYY-MM-DD' 
+      });
+    }
+
+    // Get event data
+    const events = await Event.find({
+      date: { $gte: start, $lte: end }
+    }).lean();
+
+    // Create PDF document with buffer
+    const doc = new PDFDocument({ margin: 50 });
+    const chunks = [];
+    
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(chunks);
+      const pdfBase64 = pdfBuffer.toString('base64');
+      
+      res.json({
+        success: true,
+        data: {
+          pdf: pdfBase64,
+          filename: `event-report-${new Date().toISOString().split('T')[0]}.pdf`,
+          mimeType: 'application/pdf',
+          totalEvents: events.length
+        }
+      });
+    });
+    
+    // Add title
+    doc.fontSize(20).text('Event Report', { align: 'center' });
+    doc.moveDown();
+    
+    doc.fontSize(12).text(`Date Range: ${start.toDateString()} to ${new Date(end).toDateString()}`, { align: 'center' });
+    doc.moveDown(2);
+    
+    doc.fontSize(10).text(`Report generated on: ${new Date().toLocaleString()}`, { align: 'right' });
+    doc.moveDown(2);
+    
+    if (events.length === 0) {
+      doc.fontSize(14).text('No events found for the selected date range.', { align: 'center' });
+    } else {
+      let currentY = doc.y;
+      
+      doc.font('Helvetica-Bold');
+      doc.text('Event Name', 50, currentY);
+      doc.text('Date', 180, currentY);
+      doc.text('Zone', 320, currentY);
+      doc.text('Description', 430, currentY);
+      doc.text('Allocated Slots', 520, currentY);
+      
+      currentY += 25;
+      doc.moveTo(50, currentY).lineTo(580, currentY).stroke();
+      
+      doc.font('Helvetica');
+      events.forEach((event) => {
+        if (currentY > 700) {
+          doc.addPage();
+          currentY = 100;
+          doc.font('Helvetica-Bold');
+          doc.text('Event Name', 50, 50);
+          doc.text('Date', 180, 50);
+          doc.text('Zone', 320, 50);
+          doc.text('Description', 430, 50);
+          doc.text('Allocated Slots', 520, 50);
+          doc.moveTo(50, 75).lineTo(580, 75).stroke();
+          doc.font('Helvetica');
+        }
+        
+        doc.text(event.name, 50, currentY);
+        doc.text(new Date(event.date).toLocaleDateString(), 180, currentY);
+        doc.text(event.zone || 'N/A', 320, currentY);
+        doc.text(event.description || 'N/A', 430, currentY);
+        doc.text(event.allocatedSlots.toString(), 520, currentY);
+        
+        currentY += 20;
+        doc.moveTo(50, currentY - 5).lineTo(580, currentY - 5).stroke();
+        currentY += 10;
+      });
+      
+      doc.addPage();
+      doc.fontSize(16).text('Summary', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).text(`Total Events: ${events.length}`);
+      
+      const zoneCounts = {};
+      events.forEach((event) => {
+        const zoneName = event.zone || 'Unknown';
+        zoneCounts[zoneName] = (zoneCounts[zoneName] || 0) + 1;
+      });
+      
+      doc.moveDown();
+      doc.fontSize(14).text('Events by Zone:');
+      doc.moveDown(0.5);
+      
+      Object.entries(zoneCounts).forEach(([zone, count]) => {
+        doc.text(`${zone}: ${count}`, { indent: 20 });
+      });
+    }
+    
+    doc.end();
+    
+  } catch (error) {
+    console.error('Error generating event report:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to generate event report',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @route GET /api/admin/reports/combined/pdf
+ * @description Generate a combined PDF report of bookings, users, and events within a date range (returns base64)
+ * @access Private (Admin only)
+ */
+app.get('/api/admin/reports/combined/pdf', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Start date and end date are required' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid date format. Use YYYY-MM-DD' 
+      });
+    }
+
+    // Get booking data
+    const bookings = await Booking.find({
+      date: { $gte: start, $lte: end }
+    }).lean();
+
+    // Get user data
+    const users = await User.find({
+      createdAt: { $gte: start, $lte: end }
+    }).select('-password').lean();
+
+    // Get event data
+    const events = await Event.find({
+      date: { $gte: start, $lte: end }
+    }).lean();
+
+    // Create PDF document with buffer
+    const doc = new PDFDocument({ margin: 50 });
+    const chunks = [];
+    
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(chunks);
+      const pdfBase64 = pdfBuffer.toString('base64');
+      
+      res.json({
+        success: true,
+        data: {
+          pdf: pdfBase64,
+          filename: `combined-report-${new Date().toISOString().split('T')[0]}.pdf`,
+          mimeType: 'application/pdf',
+          totalBookings: bookings.length,
+          totalUsers: users.length,
+          totalEvents: events.length
+        }
+      });
+    });
+    
+    // Add title
+    doc.fontSize(20).text('Combined Report', { align: 'center' });
+    doc.moveDown();
+    
+    doc.fontSize(12).text(`Date Range: ${start.toDateString()} to ${new Date(end).toDateString()}`, { align: 'center' });
+    doc.moveDown(2);
+    
+    doc.fontSize(10).text(`Report generated on: ${new Date().toLocaleString()}`, { align: 'right' });
+    doc.moveDown(2);
+    
+    // Format bookings data
+    const formattedBookings = bookings.map(booking => ({
+      id: booking._id,
+      user: booking.userId?.name || 'Unknown User',
+      userEmail: booking.userId?.email || 'N/A',
+      zone: booking.zoneName || booking.zoneId?.name || 'N/A',
+      spot: booking.zoneId?.type || 'N/A',
+      date: booking.date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }),
+      duration: `${booking.duration} hours`,
+      vehicleNumber: booking.vehicleNumber || 'N/A',
+      status: booking.status,
+      qrCode: booking.qrCode,
+      checkInTime: booking.checkInTime ? new Date(booking.checkInTime).toLocaleString() : 'Not checked in',
+      checkOutTime: booking.checkOutTime ? new Date(booking.checkOutTime).toLocaleString() : 'Not checked out'
+    }));
+
+    // Format users data
+    const formattedUsers = users.map(user => ({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department || 'N/A',
+      phone: user.phone || 'N/A',
+      vehicleNumber: user.vehicleNumber || 'N/A',
+      registrationDate: user.createdAt
+    }));
+
+    // Format events data
+    const formattedEvents = events.map(event => ({
+      id: event._id,
+      title: event.name,
+      date: event.date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      location: event.zone || 'N/A',
+      allocatedSlots: event.allocatedSlots,
+      description: event.description || ''
+    }));
+
+    // Calculate summary statistics
+    const summary = {
+      totalUsers: formattedUsers.length,
+      totalBookings: formattedBookings.length,
+      activeEvents: events.length,
+      totalRevenue: formattedBookings.length * 5, // Assuming $5 per booking
+      activeBookings: formattedBookings.filter(b => b.status === 'active').length,
+      completedBookings: formattedBookings.filter(b => b.status === 'completed').length,
+      cancelledBookings: formattedBookings.filter(b => b.status === 'cancelled').length
+    };
+
+    // Calculate bookings by zone
+    const bookingsByZone = {};
+    formattedBookings.forEach(booking => {
+      const zoneName = booking.zone;
+      if (!bookingsByZone[zoneName]) {
+        bookingsByZone[zoneName] = 0;
+      }
+      bookingsByZone[zoneName]++;
+    });
+
+    // Calculate user statistics by role
+    const usersByRole = {
+      student: formattedUsers.filter(u => u.role === 'student').length,
+      staff: formattedUsers.filter(u => u.role === 'staff').length,
+      visitor: formattedUsers.filter(u => u.role === 'visitor').length
+    };
+
+    // Send response
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          ...summary,
+          usersByRole,
+          bookingsByZone
+        },
+        users: formattedUsers,
+        events: formattedEvents,
+        bookings: formattedBookings,
+        dateRange: {
+          start: start.toISOString(),
+          end: end.toISOString()
+        },
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error generating combined report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generating combined report',
+      error: error.message
+    });
+  }
+});
+
 // ===== ERROR HANDLING =====
 
 app.use((err, req, res, next) => {
