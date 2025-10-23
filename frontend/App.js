@@ -395,7 +395,7 @@ const CampusParkingApp = () => {
   const [zoneForm, setZoneForm] = useState({
     id: '',
     name: '',
-    total: '',
+    totalSlots: '',
     type: 'general',
     location: '',
   });
@@ -950,11 +950,11 @@ const CampusParkingApp = () => {
   };
 
   const handleUpdateZone = async () => {
-    if (!zoneForm.name || !zoneForm.total) {
+    if (!zoneForm.name || !zoneForm.totalSlots) {
       Alert.alert('Error', 'Please fill all required fields (Name, Total Capacity)');
       return;
     }
-    const total = parseInt(zoneForm.total);
+    const total = parseInt(zoneForm.totalSlots);
     if (isNaN(total) || total < 1) {
       Alert.alert('Error', 'Total capacity must be at least 1');
       return;
@@ -1559,8 +1559,8 @@ const CampusParkingApp = () => {
               <Text style={styles.label}>Total Capacity *</Text>
               <TextInput
                 style={styles.input}
-                value={zoneForm.total}
-                onChangeText={(text) => setZoneForm({ ...zoneForm, total: text })}
+                value={zoneForm.totalSlots}
+                onChangeText={(text) => setZoneForm({ ...zoneForm, totalSlots: text })}
                 keyboardType="numeric"
                 placeholder="50"
               />
@@ -2154,7 +2154,7 @@ const CampusParkingApp = () => {
                   <View style={styles.cardContent}>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Total Capacity</Text>
-                      <Text style={styles.availabilityValue}>{String(zone.total || 0)} spots</Text>
+                      <Text style={styles.availabilityValue}>{String(zone.totalSlots || 0)} spots</Text>
                     </View>
                     <View style={styles.availabilityRow}>
                       <Text style={styles.availabilityLabel}>Currently Available</Text>
